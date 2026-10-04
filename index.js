@@ -6,12 +6,22 @@ const auth = require("./routes/auth")
 const products = require("./routes/products")
 const orders = require("./routes/orders")
 
-const dns = require("dns")
-dns.setServers(['1.1.1.1', '8.8.8.8'])
+// Only use custom DNS in local environment, NOT on Vercel/serverless
+if (!process.env.VERCEL) {
+    const dns = require("dns")
+    try {
+        dns.setServers(['1.1.1.1', '8.8.8.8'])
+    } catch (e) {
+        console.warn("Could not set custom DNS servers:", e.message)
+    }
+}
 
 const app = express()
 
-connectDB()
+// Health check endpoint
+app.get("/", (req, res) => {
+    res.status(200).json({ status: "ok", message: "E-commerce Backend is running successfully!" })
+})
 
 const allowedOrigins = [
   "https://ecommerce-frontend-app-phi.vercel.app",
@@ -41,14 +51,31 @@ app.use(cors({
 
 app.use(express.json())
 
+// Ensure DB is connected before handling API requests (vital for Vercel serverless)
+app.use(async (req, res, next) => {
+    try {
+        await connectDB()
+        next()
+    } catch (err) {
+        console.error("Database connection middleware error:", err)
+        return res.status(500).json({
+            message: "Database connection failed. Please check MONGODB credentials in Vercel environment variables and ensure MongoDB Atlas allows 0.0.0.0/0.",
+            error: err.message,
+            isError: true
+        })
+    }
+})
+
 app.use("/auth", auth)
 app.use("/products", products)
 app.use("/orders", orders)
 
 const { PORT = 8000 } = process.env
 
-app.listen(PORT, () => {
-    console.log(`Server is running on PORT:${PORT}`)
-})
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`Server is running on PORT:${PORT}`)
+    })
+}
 
 module.exports = app
